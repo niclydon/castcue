@@ -32,7 +32,7 @@ known words to the waveform instead of guessing them.
 It also emits 16 viseme classes, not Rhubarb's 9 — while still
 exporting Rhubarb TSV/JSON for pipelines that already eat them.
 
-## Status: v0.1
+## Status: v0.1.1
 
 Implemented and smoke-tested (see `PLAN.md` for the full roadmap and
 what is deliberately *not* in this slice):
@@ -49,6 +49,9 @@ what is deliberately *not* in this slice):
   GIF/contact-sheet previews, registration QA
 - Honest backend status: unconfigured generation backends say so
   (`castcue_status`), planned slices are labeled planned
+- Hosted mode: `TRANSPORT=http` serves JSON-RPC over HTTP behind
+  a fail-closed `X-Origin-Secret` guard (refuses to start without
+  a secret); see `deploy/` for a systemd example
 
 Coming next: generation adapters (cloud first, then local) for
 character masters and viseme sets under an automated registration-QA

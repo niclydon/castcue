@@ -1,0 +1,34 @@
+# Example systemd unit for a hosted CastCue instance.
+# Copy to /etc/systemd/system/castcue-mcp.service and adjust paths.
+# The .env (0600, never committed) carries:
+#   TRANSPORT=http
+#   BIND_HOST=127.0.0.1        # or your tailnet/LAN address
+#   PORT=7897
+#   ORIGIN_SHARED_SECRET=...   # required; HTTP mode fails closed without it
+#   CASTCUE_HOME=/services/castcue-mcp/data
+#   CASTCUE_CMUDICT=/services/castcue-mcp/cmudict.txt
+[Unit]
+Description=castcue-mcp — CastCue character-asset MCP (HTTP origin)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=castcue
+Group=castcue
+WorkingDirectory=/services/castcue-mcp
+EnvironmentFile=/services/castcue-mcp/.env
+ExecStart=/services/castcue-mcp/venv/bin/python /services/castcue-mcp/server.py
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=castcue-mcp
+ProtectSystem=full
+PrivateTmp=true
+NoNewPrivileges=true
+ReadWritePaths=/services/castcue-mcp
+
+[Install]
+WantedBy=multi-user.target

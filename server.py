@@ -11,9 +11,15 @@ implemented vs planned; castcue_status reports it honestly.
 CLI maintenance modes:
   python3 server.py --status    print castcue_status as JSON
   python3 server.py --tools     print the tool list as JSON
+
+HTTP transport (for hosted deployments): set TRANSPORT=http with
+BIND_HOST / PORT and ORIGIN_SHARED_SECRET. The guard is fail-closed:
+HTTP mode refuses to start without a secret, and every path except
+GET /health requires the X-Origin-Secret header.
 """
 import base64
 import hashlib
+import hmac
 import json
 import os
 import sys
@@ -24,7 +30,7 @@ import imaging
 import profiles as profile_mod
 import store
 
-VERSION = "0.1.0"
+VERSION = "0.1.1"
 
 _cmudict_cache: dict = {}
 
@@ -399,7 +405,70 @@ def handle(msg):
     return None
 
 
+def serve_http():
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    secret = os.environ.get("ORIGIN_SHARED_SECRET", "")
+    if not secret:
+        raise SystemExit("TRANSPORT=http requires ORIGIN_SHARED_SECRET "
+                         "(fail-closed: refusing to start without it)")
+    bind = os.environ.get("BIND_HOST", "127.0.0.1")
+    port = int(os.environ.get("PORT", "7897"))
+
+    class Handler(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def log_message(self, *a):  # keep the journal clean
+            pass
+
+        def _send(self, code, obj=None):
+            body = b"" if obj is None else json.dumps(obj).encode()
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            if body:
+                self.wfile.write(body)
+
+        def _authorized(self):
+            given = self.headers.get("X-Origin-Secret", "")
+            return hmac.compare_digest(given, secret)
+
+        def do_GET(self):
+            if self.path == "/health":
+                self._send(200, {"status": "ok", "server": "castcue",
+                                 "version": VERSION, "transport": "http"})
+                return
+            if not self._authorized():
+                self._send(401, {"error": "unauthorized"})
+                return
+            self._send(405, {"error": "POST only"})
+
+        def do_POST(self):
+            if self.path not in ("/", "/mcp"):
+                self._send(404, {"error": "not found"})
+                return
+            if not self._authorized():
+                self._send(401, {"error": "unauthorized"})
+                return
+            try:
+                n = int(self.headers.get("Content-Length", "0"))
+                msg = json.loads(self.rfile.read(n) or b"{}")
+            except Exception as e:
+                self._send(400, {"jsonrpc": "2.0", "id": None,
+                                 "error": {"code": -32700,
+                                           "message": str(e)}})
+                return
+            resp = handle(msg)
+            self._send(200 if resp is not None else 202, resp)
+
+    ThreadingHTTPServer((bind, port), Handler).serve_forever()
+
+
 def main():
+    if os.environ.get("TRANSPORT") == "http":
+        serve_http()
+        return
     if len(sys.argv) > 1 and sys.argv[1] == "--status":
         print(json.dumps(call_tool("castcue_status", {}), indent=1))
         return
